@@ -1,34 +1,68 @@
-# from os import path
-import uuid
+# import os
+from os import path
+from django.utils.safestring import mark_safe
 
+from django.core.validators import MinValueValidator
 from django.db import models
 
+from project1.project.constants import MAX_DIGITS, DECIMAL_PLACES
+from project1.project.mixins.models import PKMixins
+# from project1.settings import BASE_DIR
 
-# def upload_to(instance, filename):
-#     _name, extension = path.splitext(filename)
-#     return f'products/images/{str(instance.pk)}{extension}'
+# MEDIA_ROOT = os.path.join(BASE_DIR, 'media/')
+# MEDIA_URL = '/media/'
 
 
-class Product(models.Model):
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+def upload_to(instance, filename):
+    _name, extension = path.splitext(filename)
+    return f'media/media/products/images/{str(instance.pk)}{extension}'
+
+
+def get_image(self, obj):
+    if obj.image:
+        return mark_safe(f'<img src="{obj.image.url}" width="64" height="64">')
+    return ''
+
+
+class Category(PKMixins):
     name = models.CharField(max_length=255)
     description = models.TextField(
         blank=True,
         null=True
     )
-    # image = models.ImageField(upload_to=upload_to)
+    image = models.ImageField(
+        upload_to='media/media/products/images/',
+        null=True,
+        blank=True
+    )
+
+    def __str__(self):
+        return self.name
+
+
+class Product(PKMixins):
+    name = models.CharField(max_length=255)
+    description = models.TextField(
+        blank=True,
+        null=True
+    )
+    image = models.ImageField(
+        upload_to='media/media/products/images/',
+        null=True,
+        blank=True
+    )
     sku = models.CharField(max_length=255)
     is_active = models.BooleanField(default=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+    categories = models.ManyToManyField(Category, blank=True)
+    products = models.ManyToManyField('products.Product', blank=True)
+    price = models.DecimalField(
+        validators=[MinValueValidator(0)],
+        max_digits=MAX_DIGITS,
+        decimal_places=DECIMAL_PLACES
+    )
 
-
-class Category(models.Model):
-    name = models.CharField(max_length=255)
-    description = models.TextField()
-    # image = models.ImageField(upload_to='category_images')
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+    def __str__(self):
+        return f'{self.name} - {self.price}'
 
 
 class Discount(models.Model):
