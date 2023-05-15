@@ -1,0 +1,2 @@
+def image():
+    return None
