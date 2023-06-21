@@ -1,25 +1,25 @@
 from django.contrib import admin
-from .models import Order, Discount, OrderItem
+from django.contrib.admin import TabularInline
+
+from orders.models import Order, OrderItem, Discount
+
+
+class OrderItemInline(TabularInline):
+    model = OrderItem
+    extra = 1
 
 
 @admin.register(Order)
 class OrderAdmin(admin.ModelAdmin):
-    list_display = ('id', 'user', 'order_number', 'is_active', 'is_paid')
-    list_filter = ('is_active', 'is_paid')
-    search_fields = ('user__username', 'order_number')
+    inlines = [OrderItemInline]
+    list_display = ('total_amount', 'is_active', 'is_paid')
 
 
 @admin.register(OrderItem)
 class OrderItemAdmin(admin.ModelAdmin):
-    list_display = ('id', 'order',
-                    'product_name',
-                    'quantity',
-                    'price',
-                    'discount_type',
-                    'discount_value')
-    list_filter = ('order',)
+    ...
 
 
 @admin.register(Discount)
 class DiscountAdmin(admin.ModelAdmin):
-    list_display = ('id', 'discount_type', 'value', 'description')
+    ...

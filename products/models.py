@@ -1,37 +1,34 @@
-# import os
-from os import path
-from django.utils.safestring import mark_safe
+import os
 
+from django.conf import settings
+from django.contrib.auth import get_user_model
+from django.core.cache import cache
 from django.core.validators import MinValueValidator
 from django.db import models
+from django_lifecycle import LifecycleModelMixin, hook, AFTER_UPDATE, \
+    AFTER_CREATE, BEFORE_CREATE, BEFORE_UPDATE
+import slugify
 
 from project1.project.constants import MAX_DIGITS, DECIMAL_PLACES
 from project1.project.mixins.models import PKMixins
-# from project1.settings import BASE_DIR
-
-# MEDIA_ROOT = os.path.join(BASE_DIR, 'media/')
-# MEDIA_URL = '/media/'
+from project1.model_choices import Currencies, ProductCacheKeys
 
 
 def upload_to(instance, filename):
-    _name, extension = path.splitext(filename)
-    return f'media/media/products/images/{str(instance.pk)}{extension}'
+    _name, extension = os.path.splitext(filename)
+    return f'products/images/{str(instance.pk)}{extension}'
 
 
-def get_image(self, obj):
-    if obj.image:
-        return mark_safe(f'<img src="{obj.image.url}" width="64" height="64">')
-    return ''
-
-
-class Category(PKMixins):
+class Category(LifecycleModelMixin, PKMixins):
     name = models.CharField(max_length=255)
+    slug = models.SlugField(max_length=255)
+    is_manual_slug = models.BooleanField(default=False)
     description = models.TextField(
         blank=True,
         null=True
     )
     image = models.ImageField(
-        upload_to='media/media/products/images/',
+        upload_to=upload_to,
         null=True,
         blank=True
     )
@@ -39,38 +36,92 @@ class Category(PKMixins):
     def __str__(self):
         return self.name
 
+    @hook(BEFORE_CREATE)
+    @hook(BEFORE_UPDATE, when='name', has_changed=True)
+    def after_signal(self):
+        if not self.is_manual_slug:
+            self.slug = slugify.slugify(self.name)
 
-class Product(PKMixins):
+
+class Product(LifecycleModelMixin, PKMixins):
     name = models.CharField(max_length=255)
     description = models.TextField(
         blank=True,
         null=True
     )
     image = models.ImageField(
-        upload_to='media/media/products/images/',
+        upload_to=upload_to,
         null=True,
         blank=True
     )
     sku = models.CharField(max_length=255)
     is_active = models.BooleanField(default=True)
     categories = models.ManyToManyField(Category, blank=True)
-    products = models.ManyToManyField('products.Product', blank=True)
+    products = models.ManyToManyField("products.Product", blank=True)
     price = models.DecimalField(
         validators=[MinValueValidator(0)],
         max_digits=MAX_DIGITS,
         decimal_places=DECIMAL_PLACES
     )
+    currency = models.CharField(
+        max_length=16,
+        choices=Currencies.choices,
+        default=Currencies.UAH
+    )
 
     def __str__(self):
-        return f'{self.name} - {self.price}'
+        return f"{self.name} - {self.price}"
+
+    @hook(AFTER_CREATE)
+    @hook(AFTER_UPDATE)
+    def after_create_signal(self):
+        cache.delete(ProductCacheKeys.PRODUCTS)
+
+    @hook(BEFORE_UPDATE, when='image')
+    def after_update_signal(self):
+        if self.initial_value('image'):
+            image_path = os.path.join(settings.BASE_DIR,
+                                      settings.MEDIA_ROOT,
+                                      str(self.initial_value('image')))
+            try:
+                os.remove(image_path)
+            except (FileNotFoundError, OSError, IOError):
+                ...
+
+    def delete(self, *args, **kwargs):
+        self.image.delete()
+        super().delete(*args, **kwargs)
 
 
-class Discount(models.Model):
-    AMOUNT_TYPE_CHOICES = (
-        (0, 'В деньгах'),
-        (1, 'Проценты')
+class Attribute(PKMixins):
+    name = models.CharField(max_length=255)
+
+
+class CategoryAttribute(PKMixins):
+    category = models.ForeignKey(
+        Category,
+        on_delete=models.CASCADE,
+        related_name='attributes'
     )
-    amount = models.PositiveIntegerField()
-    code = models.CharField(max_length=255)
-    is_active = models.BooleanField(default=True)
-    discount_type = models.PositiveIntegerField(choices=AMOUNT_TYPE_CHOICES)
+    attribute = models.ForeignKey(
+        Attribute,
+        on_delete=models.CASCADE,
+        related_name='attribute_categories'
+    )
+    value = models.CharField(max_length=255)
+
+
+class FavouriteProduct(PKMixins):
+    product = models.ForeignKey(
+        Product,
+        on_delete=models.CASCADE,
+        related_name='favourites'
+    )
+    user = models.ForeignKey(
+        get_user_model(),
+        on_delete=models.CASCADE,
+        related_name='favourite_products'
+    )
+
+    class Meta:
+        unique_together = ('product', 'user')
